@@ -1129,6 +1129,74 @@ h2 {
   box-shadow: 0 20px 56px rgba(35, 49, 61, 0.1);
 }
 
+.export-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(23, 33, 43, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 38px rgba(35, 49, 61, 0.08);
+}
+
+.export-control-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(160px, 0.65fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.export-field {
+  display: grid;
+  gap: 8px;
+}
+
+.export-week-list {
+  max-height: 190px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dbe7e4;
+  border-radius: 8px;
+  background: #f7fbfa;
+}
+
+.export-week-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e4eeeb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.export-week-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: #1d6f68;
+}
+
+.export-week-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.export-week-option strong {
+  color: #17212b;
+  font-size: 0.92rem;
+}
+
+.export-week-option small {
+  color: #66737b;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
 .table-toolbar {
   display: flex;
   align-items: center;
@@ -1635,6 +1703,14 @@ output {
     flex-direction: column;
   }
 
+  .export-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .export-control-grid {
+    grid-template-columns: 1fr;
+  }
+
   .panel-title {
     flex-direction: column;
   }
@@ -1808,7 +1884,8 @@ output {
   .table-toolbar,
   .day-row,
   .week-browser,
-  .week-navigation {
+  .week-navigation,
+  .export-panel {
     width: 100%;
     max-width: 100%;
     padding: 14px;
@@ -1887,6 +1964,10 @@ output {
   }
 
   .actions button {
+    width: 100%;
+  }
+
+  .export-control-grid > button {
     width: 100%;
   }
 

@@ -63,6 +63,7 @@ function Icon({ name }) {
     chevronRight: "m9 18 6-6-6-6",
     chevronDown: "m6 9 6 6 6-6",
     sparkles: "M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z M19 15l.7 2.3L22 18l-2.3.7L19 22l-.7-2.3L16 18l2.3-.7L19 15Z",
+    download: "M12 3v12 M7 10l5 5 5-5 M5 21h14",
     clear: "M18 6 6 18 M6 6l12 12"
   };
 
@@ -120,6 +121,133 @@ function money(value) {
   }).format(value || 0);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function escapeCsv(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function safePdfText(value) {
+  return String(value ?? "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapePdfText(value) {
+  return safePdfText(value).replaceAll("\\", "\\\\").replaceAll("(", "\\(").replaceAll(")", "\\)");
+}
+
+function wrapPdfLine(value, maxLength = 96) {
+  const words = safePdfText(value).split(" ");
+  const lines = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const nextLine = line ? `${line} ${word}` : word;
+    if (nextLine.length > maxLength && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = nextLine;
+    }
+  });
+
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function getReportTextLines(report) {
+  return [
+    "Punch In Punch Out Timesheet",
+    `${report.title} - ${report.status}`,
+    `Total hours: ${report.totalHours.toFixed(2)}`,
+    `Total pay: ${money(report.totalPay)}`,
+    `Hourly rate: ${money(report.rate)}`,
+    "",
+    ...report.weeks.flatMap((weekReport) => [
+      `Week starting ${weekReport.weekStart} - ${weekReport.status}`,
+      "Date | Day | Start time | End time | Daily hours",
+      ...weekReport.days.map((day) =>
+        `${day.date} | ${day.day} | ${day.start} | ${day.end} | ${day.hours.toFixed(2)}`
+      ),
+      `Total hours this week: ${weekReport.totalHours.toFixed(2)}`,
+      ""
+    ])
+  ];
+}
+
+function buildPdf(report) {
+  const allLines = getReportTextLines(report).flatMap((line) => wrapPdfLine(line));
+  const linesPerPage = 42;
+  const pages = [];
+
+  for (let index = 0; index < allLines.length; index += linesPerPage) {
+    pages.push(allLines.slice(index, index + linesPerPage));
+  }
+
+  if (!pages.length) pages.push(["Punch In Punch Out Timesheet"]);
+
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+
+  const fontId = addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const pagesId = addObject("");
+  const pageIds = [];
+
+  pages.forEach((pageLines) => {
+    const textCommands = pageLines
+      .map((line, index) => `${index === 0 ? "" : "0 -16 Td\n"}(${escapePdfText(line)}) Tj`)
+      .join("\n");
+    const stream = `BT\n/F1 11 Tf\n42 750 Td\n${textCommands}\nET`;
+    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
+    pageIds.push(pageId);
+  });
+
+  objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`;
+  const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  objects.forEach((body, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return pdf;
+}
+
 function calculateWeekTotals(savedWeek, hourlyRate = 0) {
   const daily = (savedWeek.days || []).map(calculateDayHours);
   const weeklyHours = Number(daily.reduce((sum, hours) => sum + hours, 0).toFixed(2));
@@ -144,6 +272,11 @@ function formatDisplayTime(value, style) {
   const suffix = rawHours >= 12 ? "PM" : "AM";
   const hours = rawHours % 12 || 12;
   return `${hours}:${String(rawMinutes).padStart(2, "0")} ${suffix}`;
+}
+
+function formatExportTime(value) {
+  if (!value) return "-";
+  return formatDisplayTime(value, "12");
 }
 
 function calculateLiveDayHours(day, activeTimer, now) {
@@ -225,6 +358,8 @@ function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [dirtyDayKeys, setDirtyDayKeys] = useState([]);
+  const [exportWeekStarts, setExportWeekStarts] = useState([]);
+  const [exportFormat, setExportFormat] = useState("pdf");
 
   const todayIndex = (new Date().getDay() + 6) % 7;
   const activeWorkIndex =
@@ -354,6 +489,10 @@ function App() {
       totals: calculateWeekTotals(savedWeek, hourlyRate)
     }));
   }, [hourlyRate, weeks]);
+
+  const exportWeeks = useMemo(() => {
+    return allWeeks.filter((savedWeek) => exportWeekStarts.includes(savedWeek.weekStart));
+  }, [allWeeks, exportWeekStarts]);
 
   const visibleWeeks = useMemo(() => {
     if (weekView === "paid") return paidWeeks;
@@ -754,6 +893,176 @@ function App() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function getWeeksExport(selectedWeeks) {
+    const rate = Number(hourlyRate || 0);
+    const weeks = selectedWeeks.map((selectedWeek) => {
+      const days = selectedWeek.days.map((day) => {
+        const hours = calculateDayHours(day);
+        return {
+          weekStart: selectedWeek.weekStart,
+          status: selectedWeek.isPaid ? "Paid" : "Unpaid",
+          day: day.label,
+          date: day.date,
+          start: formatExportTime(day.start),
+          end: formatExportTime(day.end),
+          breakMinutes: Number(day.breakMinutes || 0),
+          hours,
+          pay: Number((hours * rate).toFixed(2)),
+          notes: day.notes || ""
+        };
+      });
+      const totalHours = Number(days.reduce((sum, day) => sum + day.hours, 0).toFixed(2));
+
+      return {
+        weekStart: selectedWeek.weekStart,
+        status: selectedWeek.isPaid ? "Paid" : "Unpaid",
+        days,
+        totalHours,
+        totalPay: Number((totalHours * rate).toFixed(2))
+      };
+    });
+    const rows = weeks.flatMap((weekReport) => weekReport.days);
+
+    const totalHours = Number(rows.reduce((sum, row) => sum + row.hours, 0).toFixed(2));
+    const totalPay = Number((totalHours * rate).toFixed(2));
+    const title = selectedWeeks.length === 1
+      ? `Week ${selectedWeeks[0].weekStart}`
+      : `${selectedWeeks.length} selected weeks`;
+
+    return {
+      title,
+      filenameBase: selectedWeeks.length === 1 ? `week-${selectedWeeks[0].weekStart}` : "selected-weeks",
+      rate,
+      totalHours,
+      totalPay,
+      status: selectedWeeks.length === 1 ? (selectedWeeks[0].isPaid ? "Paid" : "Unpaid") : "Multiple weeks",
+      weeks,
+      rows
+    };
+  }
+
+  function buildExportHtml(report) {
+    const weekTables = report.weeks.map((weekReport) => {
+      const rows = weekReport.days.map((day) => `
+        <tr>
+          <td>${escapeHtml(day.date)}</td>
+          <td>${escapeHtml(day.day)}</td>
+          <td>${escapeHtml(day.start)}</td>
+          <td>${escapeHtml(day.end)}</td>
+          <td>${escapeHtml(day.hours.toFixed(2))}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <section class="week">
+          <h2>Week starting ${escapeHtml(weekReport.weekStart)}</h2>
+          <p>${escapeHtml(weekReport.status)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Day</th><th>Start time</th><th>End time</th><th>Daily hours</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr><td colspan="4">Total hours this week</td><td>${escapeHtml(weekReport.totalHours.toFixed(2))}</td></tr>
+            </tfoot>
+          </table>
+        </section>
+      `;
+    }).join("");
+
+    return `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(report.title)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #17212b; margin: 32px; }
+            h1 { margin: 0 0 8px; font-size: 28px; }
+            h2 { margin: 28px 0 4px; font-size: 20px; }
+            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0; }
+            .summary div { border: 1px solid #dbe7e4; padding: 12px; border-radius: 6px; }
+            .summary span { display: block; color: #66737b; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+            .summary strong { display: block; margin-top: 6px; font-size: 18px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+            th, td { border: 1px solid #dbe7e4; padding: 8px; text-align: left; font-size: 13px; }
+            th { background: #17212b; color: #fff; }
+            tfoot td { font-weight: 700; background: #eef7f4; }
+            @media print { body { margin: 18px; } }
+          </style>
+        </head>
+        <body>
+          <h1>Punch In Punch Out Timesheet</h1>
+          <p>${escapeHtml(report.title)} - ${escapeHtml(report.status)}</p>
+          <section class="summary">
+            <div><span>Total hours</span><strong>${escapeHtml(report.totalHours.toFixed(2))}</strong></div>
+            <div><span>Total pay</span><strong>${escapeHtml(money(report.totalPay))}</strong></div>
+            <div><span>Hourly rate</span><strong>${escapeHtml(money(report.rate))}</strong></div>
+            <div><span>Status</span><strong>${escapeHtml(report.status)}</strong></div>
+          </section>
+          ${weekTables}
+        </body>
+      </html>`;
+  }
+
+  function exportSelectedWeeks() {
+    if (!exportWeeks.length) {
+      setStatus("Select at least one week to export.");
+      return;
+    }
+
+    const report = getWeeksExport(exportWeeks);
+    const format = exportFormat;
+
+    if (format === "txt") {
+      downloadBlob(getReportTextLines(report).join("\n"), `${report.filenameBase}.txt`, "text/plain;charset=utf-8");
+    }
+
+    if (format === "csv") {
+      const rows = [
+        ["Week", report.title],
+        ["Status", report.status],
+        ["Total Hours", report.totalHours.toFixed(2)],
+        ["Total Pay", money(report.totalPay)],
+        ["Hourly Rate", money(report.rate)],
+        [],
+        ...report.weeks.flatMap((weekReport) => [
+          [`Week starting ${weekReport.weekStart}`, weekReport.status],
+          ["Date", "Day", "Start Time", "End Time", "Daily Hours"],
+          ...weekReport.days.map((day) => [
+            day.date,
+            day.day,
+            day.start,
+            day.end,
+            day.hours.toFixed(2)
+          ]),
+          ["Total hours this week", "", "", "", weekReport.totalHours.toFixed(2)],
+          []
+        ])
+      ];
+      downloadBlob(rows.map((row) => row.map(escapeCsv).join(",")).join("\n"), `${report.filenameBase}.csv`, "text/csv;charset=utf-8");
+    }
+
+    if (format === "doc") {
+      downloadBlob(buildExportHtml(report), `${report.filenameBase}.doc`, "application/msword;charset=utf-8");
+    }
+
+    if (format === "pdf") {
+      downloadBlob(buildPdf(report), `${report.filenameBase}.pdf`, "application/pdf");
+    }
+
+    setStatus(`${report.title} export ready.`);
+  }
+
+  function toggleExportWeek(weekStart) {
+    setExportWeekStarts((starts) =>
+      starts.includes(weekStart)
+        ? starts.filter((start) => start !== weekStart)
+        : [...starts, weekStart]
+    );
   }
 
   async function togglePaidStatus() {
@@ -1227,6 +1536,57 @@ function App() {
                 <Icon name="save" />
                 Save rate
               </button>
+            </section>
+
+            <section className="export-panel dashboard-export-panel" aria-label="Export weeks">
+              <div>
+                <p className="eyebrow">Export</p>
+                <h2>Export week reports</h2>
+                <span className="table-hint">Select one or more saved weeks, choose a format, then export.</span>
+              </div>
+
+              <div className="export-control-grid">
+                <div className="export-field">
+                  <span>Weeks</span>
+                  <div className="export-week-list">
+                    {allWeeks.length ? (
+                      allWeeks.map((savedWeek) => (
+                        <label className="export-week-option" key={savedWeek.weekStart}>
+                          <input
+                            type="checkbox"
+                            checked={exportWeekStarts.includes(savedWeek.weekStart)}
+                            onChange={() => toggleExportWeek(savedWeek.weekStart)}
+                          />
+                          <span>
+                            <strong>{savedWeek.weekStart}</strong>
+                            <small>{savedWeek.totals.weeklyHours.toFixed(2)} hrs - {money(savedWeek.totals.weeklyPay)}</small>
+                          </span>
+                        </label>
+                      ))
+                    ) : (
+                      <p className="empty-note">No saved weeks to export.</p>
+                    )}
+                  </div>
+                </div>
+
+                <label>
+                  <span>Format</span>
+                  <span className="pretty-field">
+                    <FieldIcon name="download" />
+                    <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                      <option value="pdf">PDF</option>
+                      <option value="txt">Text</option>
+                      <option value="csv">Excel CSV</option>
+                      <option value="doc">Word</option>
+                    </select>
+                  </span>
+                </label>
+
+                <button className="primary-button" type="button" onClick={exportSelectedWeeks}>
+                  <Icon name="download" />
+                  Export
+                </button>
+              </div>
             </section>
           </section>
         )}
