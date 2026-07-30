@@ -220,9 +220,11 @@ function App() {
   const [activeTimer, setActiveTimer] = useState(null);
   const [now, setNow] = useState(() => new Date());
   const [status, setStatus] = useState("Ready");
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [dirtyDayKeys, setDirtyDayKeys] = useState([]);
 
   const todayIndex = (new Date().getDay() + 6) % 7;
   const activeWorkIndex =
@@ -267,13 +269,16 @@ function App() {
 
   async function submitAuth(event) {
     event.preventDefault();
+    if (isAuthSubmitting) return;
+
     const endpoint = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
     const payload = authMode === "signup"
       ? authForm
       : { email: authForm.email, password: authForm.password };
 
     try {
-      setStatus(authMode === "signup" ? "Creating account..." : "Signing in...");
+      setIsAuthSubmitting(true);
+      setStatus(authMode === "signup" ? "Signing up..." : "Signing in...");
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -286,9 +291,11 @@ function App() {
       setHasSavedHourlyRate(false);
       saveSession(data);
       setIsLoaded(false);
-      setStatus("Signed in.");
+      setStatus(authMode === "signup" ? "Account created." : "Logged in.");
     } catch (error) {
       setStatus(error.message);
+    } finally {
+      setIsAuthSubmitting(false);
     }
   }
 
@@ -312,8 +319,16 @@ function App() {
   const activeWorkPayText = isWorkTimerRunning ? `$${activeWorkPay.toFixed(7)}` : money(activeWorkPay);
   const currentWorkDayCompleted = Boolean(currentWorkDay.start && currentWorkDay.end && !isWorkTimerRunning);
   const hasOtherActiveTimer = Boolean(activeTimer) && !isWorkTimerRunning;
+  const isWeekEditingLocked = Boolean(activeTimer);
   const shouldShowToast = status && status !== "Ready";
   const statusKind = shouldShowToast ? getStatusKind(status) : "success";
+
+  useEffect(() => {
+    if (!shouldShowToast) return undefined;
+
+    const timeout = window.setTimeout(() => setStatus("Ready"), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [shouldShowToast, status]);
 
   const unpaidWeeks = useMemo(() => {
     return weeks
@@ -440,9 +455,18 @@ function App() {
     const response = await apiFetch(`/api/weeks/${weekStart}`);
     const data = await response.json();
     const normalized = { ...createWeek(weekStart), ...data, isPaid: Boolean(data.isPaid) };
-    setWeek(normalized);
+    const visibleWeek = activeTimer?.weekStart === normalized.weekStart
+      ? {
+          ...normalized,
+          days: normalized.days.map((day, dayIndex) =>
+            dayIndex === activeTimer.dayIndex ? { ...day, start: activeTimer.startTime, end: "" } : day
+          )
+        }
+      : normalized;
+    setWeek(visibleWeek);
+    setDirtyDayKeys([]);
     setStatus("Ready");
-    return normalized;
+    return visibleWeek;
   }
 
   useEffect(() => {
@@ -497,6 +521,16 @@ function App() {
   }, [activeTimer]);
 
   function updateDay(index, field, value) {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before editing week records.");
+      return;
+    }
+
+    const dayKey = week.days[index]?.key;
+    if (dayKey) {
+      setDirtyDayKeys((keys) => (keys.includes(dayKey) ? keys : [...keys, dayKey]));
+    }
+
     setWeek((current) => ({
       ...current,
       days: current.days.map((day, dayIndex) => (dayIndex === index ? { ...day, [field]: value } : day))
@@ -504,6 +538,11 @@ function App() {
   }
 
   async function clearDay(index) {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before clearing week records.");
+      return;
+    }
+
     const nextWeek = {
       ...week,
       days: week.days.map((day, dayIndex) =>
@@ -536,6 +575,7 @@ function App() {
       const saved = await response.json();
       setWeek({ ...saved, isPaid: Boolean(saved.isPaid) });
       await loadWeeks();
+      setDirtyDayKeys((keys) => keys.filter((key) => key !== nextWeek.days[index]?.key));
       setStatus(`${week.days[index].label} cleared and saved.`);
     } catch (error) {
       setStatus(error.message);
@@ -588,6 +628,12 @@ function App() {
     }
 
     const startedAt = Date.now();
+    const nextWeek = {
+      ...week,
+      days: week.days.map((day, dayIndex) =>
+        dayIndex === index ? { ...day, start: clockTime, end: "" } : day
+      )
+    };
     const nextTimer = {
       weekStart: week.weekStart,
       dayIndex: index,
@@ -597,23 +643,31 @@ function App() {
 
     try {
       await saveActiveTimer(nextTimer);
+      const response = await apiFetch(`/api/weeks/${nextWeek.weekStart}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...nextWeek, hourlyRate: null })
+      });
+
+      if (!response.ok) throw new Error("Timer started, but week save failed.");
+      await loadWeeks();
     } catch (error) {
       setStatus(error.message);
       return;
     }
 
     setNow(new Date());
-    setWeek((current) => ({
-      ...current,
-      days: current.days.map((day, dayIndex) =>
-        dayIndex === index ? { ...day, start: clockTime, end: "" } : day
-      )
-    }));
+    setWeek(nextWeek);
     setActiveTimer({ ...nextTimer, startedAt });
-    setStatus(`${week.days[index].label} timer started at ${clockTime}.`);
+    setStatus(`${week.days[index].label} timer started at ${clockTime}. Week record is available.`);
   }
 
   function fillSampleWeek() {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before editing week records.");
+      return;
+    }
+
     const sample = [
       ["09:00", "17:00", 30, "Morning shift"],
       ["10:00", "18:00", 30, ""],
@@ -639,8 +693,8 @@ function App() {
   }
 
   async function saveWeek() {
-    if (activeTimer?.weekStart === week.weekStart) {
-      setStatus("Stop the running timer before saving this week.");
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before saving week records.");
       return;
     }
 
@@ -660,6 +714,7 @@ function App() {
       const saved = await response.json();
       setWeek({ ...saved, isPaid: Boolean(saved.isPaid) });
       await loadWeeks();
+      setDirtyDayKeys([]);
       setStatus("Saved");
     } catch (error) {
       setStatus(error.message);
@@ -668,7 +723,45 @@ function App() {
     }
   }
 
+  async function saveDay(index) {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before saving week records.");
+      return;
+    }
+
+    const day = week.days[index];
+    if (!day) return;
+
+    setIsSaving(true);
+    setStatus(`Saving ${day.label}...`);
+
+    try {
+      const response = await apiFetch(`/api/weeks/${week.weekStart}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...week, hourlyRate: null })
+      });
+
+      if (!response.ok) throw new Error(`${day.label} save failed`);
+
+      const saved = await response.json();
+      setWeek({ ...saved, isPaid: Boolean(saved.isPaid) });
+      await loadWeeks();
+      setDirtyDayKeys((keys) => keys.filter((key) => key !== day.key));
+      setStatus(`${day.label} saved.`);
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function togglePaidStatus() {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before changing payment status.");
+      return;
+    }
+
     const nextWeek = { ...week, isPaid: !week.isPaid, hourlyRate: null };
     setWeek(nextWeek);
     setStatus(nextWeek.isPaid ? "Marking paid..." : "Marking unpaid...");
@@ -693,6 +786,11 @@ function App() {
   }
 
   async function deleteWeek() {
+    if (isWeekEditingLocked) {
+      setStatus("Stop the running shift before deleting week records.");
+      return;
+    }
+
     const confirmed = window.confirm(`Delete the week starting ${week.weekStart}?`);
     if (!confirmed) return;
 
@@ -710,10 +808,6 @@ function App() {
 
   function changeWeekStart(value) {
     if (!value) return;
-    if (activeTimer) {
-      setStatus("Stop the running timer before changing weeks.");
-      return;
-    }
 
     loadWeek(value).catch(() => {
       setWeek(createWeek(value));
@@ -726,11 +820,23 @@ function App() {
     changeWeekStart(nextWeekStart);
   }
 
+  function openView(view) {
+    setActiveView(view);
+
+    if (view === "work" && activeTimer?.weekStart && activeTimer.weekStart !== week.weekStart) {
+      loadWeek(activeTimer.weekStart).catch(() => {
+        setStatus("Could not load the running shift week.");
+      });
+    }
+  }
+
   function renderDayRow(day, index, mode = "full") {
     const isRunning = activeTimer?.weekStart === week.weekStart && activeTimer.dayIndex === index;
     const isCompleted = Boolean(day.start && day.end && !isRunning);
     const anotherTimerRunning = Boolean(activeTimer) && !isRunning;
-    const isEditable = mode !== "today" && !isRunning;
+    const isEditable = mode !== "today" && !isRunning && !isWeekEditingLocked;
+    const disableRecordControls = mode !== "today" && isWeekEditingLocked;
+    const isDirty = mode !== "today" && dirtyDayKeys.includes(day.key);
 
     return (
       <article className={`day-row ${mode === "today" ? "today-row" : ""} ${isRunning ? "is-running" : ""}`} key={day.key}>
@@ -743,7 +849,7 @@ function App() {
             className={`punch-button ${isRunning ? "running" : ""} ${isCompleted ? "completed" : ""}`}
             type="button"
             onClick={() => toggleDayTimer(index)}
-            disabled={anotherTimerRunning || isCompleted || isSaving}
+            disabled={anotherTimerRunning || isCompleted || isSaving || disableRecordControls}
           >
             <Icon name={isRunning || isCompleted ? "stop" : "play"} />
             {isRunning ? "Stop shift" : isCompleted ? "Completed" : "Start shift"}
@@ -756,6 +862,7 @@ function App() {
                   type="time"
                   value={day.start}
                   onChange={(event) => updateDay(index, "start", event.target.value)}
+                  disabled={isWeekEditingLocked}
                   aria-label={`${day.label} start time`}
                 />
               </label>
@@ -765,6 +872,7 @@ function App() {
                   type="time"
                   value={day.end}
                   onChange={(event) => updateDay(index, "end", event.target.value)}
+                  disabled={isWeekEditingLocked}
                   aria-label={`${day.label} end time`}
                 />
               </label>
@@ -787,6 +895,7 @@ function App() {
             value={day.breakMinutes}
             onChange={(event) => updateDay(index, "breakMinutes", event.target.value)}
             onWheel={(event) => event.currentTarget.blur()}
+            disabled={isWeekEditingLocked && mode !== "today"}
             aria-label={`${day.label} break minutes`}
           />
         </label>
@@ -798,12 +907,21 @@ function App() {
             value={day.notes}
             placeholder="Optional note"
             onChange={(event) => updateDay(index, "notes", event.target.value)}
+            disabled={isWeekEditingLocked && mode !== "today"}
           />
         </label>
-        <button className="clear-day-button" type="button" onClick={() => clearDay(index)} disabled={isSaving}>
-          <Icon name="clear" />
-          Clear
-        </button>
+        <div className="day-actions">
+          {isDirty && (
+            <button className="row-save-button" type="button" onClick={() => saveDay(index)} disabled={isSaving || disableRecordControls}>
+              <Icon name="save" />
+              Save
+            </button>
+          )}
+          <button className="clear-day-button" type="button" onClick={() => clearDay(index)} disabled={isSaving || disableRecordControls}>
+            <Icon name="clear" />
+            Clear
+          </button>
+        </div>
       </article>
     );
   }
@@ -875,14 +993,17 @@ function App() {
                 <Icon name={showPassword ? "eyeOff" : "eye"} />
               </button>
             </div>
-            <button className="primary-button" type="submit">
+            <button className="primary-button" type="submit" disabled={isAuthSubmitting}>
               <Icon name="check" />
-              {authMode === "signup" ? "Create account" : "Sign in"}
+              {isAuthSubmitting
+                ? authMode === "signup" ? "Signing up..." : "Signing in..."
+                : authMode === "signup" ? "Create account" : "Sign in"}
             </button>
           </form>
           <button
             className="link-button"
             type="button"
+            disabled={isAuthSubmitting}
             onClick={() => setAuthMode((mode) => (mode === "signup" ? "login" : "signup"))}
           >
             {authMode === "signup" ? "Already have an account? Sign in" : "New user? Create an account"}
@@ -950,7 +1071,7 @@ function App() {
               type="button"
               key={item.id}
               onClick={() => {
-                setActiveView(item.id);
+                openView(item.id);
                 setIsMobileMenuOpen(false);
               }}
             >
@@ -987,7 +1108,7 @@ function App() {
               <p className="eyebrow">{activeView === "dashboard" ? "Dashboard" : "Records"}</p>
               <h1>{activeView === "dashboard" ? "Your work overview." : "Week records."}</h1>
             </div>
-            <button className="ghost-button" type="button" onClick={() => setActiveView("records")}>
+          <button className="ghost-button" type="button" onClick={() => openView("records")}>
               <Icon name="archive" />
               Week records
             </button>
@@ -1055,7 +1176,7 @@ function App() {
                 {renderDayRow(currentWorkDay, activeWorkIndex, "today")}
               </div>
               <div className="actions split-actions">
-                <button className="ghost-button" type="button" onClick={() => setActiveView("records")}>
+                <button className="ghost-button" type="button" onClick={() => openView("records")}>
                   <Icon name="menu" />
                   View all days
                 </button>
@@ -1112,6 +1233,13 @@ function App() {
 
         {activeView === "records" && (
           <section className="records-view">
+            {isWeekEditingLocked && (
+              <div className="records-lock-banner">
+                <Icon name="clock" />
+                <span>View only while a shift is running. Stop the shift to edit, save, delete, clear, or change payment status.</span>
+              </div>
+            )}
+
             <section className="records-hero" aria-label="Selected week summary">
               <article className="records-week-card">
                 <span>Selected week</span>
@@ -1145,7 +1273,7 @@ function App() {
               </div>
               <button className={week.isPaid ? "status-button paid" : "status-button"} type="button" onClick={togglePaidStatus}>
                 <Icon name={week.isPaid ? "undo" : "check"} />
-                {week.isPaid ? "Mark unpaid" : "Mark paid"}
+                {isWeekEditingLocked ? "Locked while running" : week.isPaid ? "Mark unpaid" : "Mark paid"}
               </button>
             </section>
 
@@ -1245,7 +1373,11 @@ function App() {
                 <div>
                   <p className="eyebrow">Timesheet</p>
                   <h2>All days</h2>
-                  <span className="table-hint">Edit start, end, break, or note, then save the week.</span>
+                  <span className="table-hint">
+                    {isWeekEditingLocked
+                      ? "Week records are view-only while a shift is running. Stop the shift to edit."
+                      : "Edit a day, then use the Save button that appears on that row."}
+                  </span>
                 </div>
                 <div className="actions">
                   <button className="sample-button" type="button" onClick={fillSampleWeek}>
@@ -1255,10 +1387,6 @@ function App() {
                   <button className="ghost-button" type="button" onClick={deleteWeek}>
                     <Icon name="trash" />
                     Delete week
-                  </button>
-                  <button className="primary-button" type="button" onClick={saveWeek} disabled={isSaving}>
-                    <Icon name="save" />
-                    {isSaving ? "Saving" : "Save week"}
                   </button>
                 </div>
               </div>
