@@ -3,7 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const dayKeys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const API_BASE = import.meta.env.VITE_API_URL || "";
-const SESSION_KEY = "punchin-session";
+const AUTH_SESSION_KEY = "punchin-auth-session";
+const LEGACY_SESSION_KEY = "punchin-session";
 const ACTIVE_VIEW_KEY = "punchin-active-view";
 const validViews = ["work", "dashboard", "records"];
 
@@ -325,15 +326,11 @@ function getStatusKind(message) {
 }
 
 function App() {
-  const storedSession = (() => {
-    try {
-      return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-    } catch {
-      return null;
-    }
-  })();
-  const [authToken, setAuthToken] = useState(storedSession?.accessToken || "");
-  const [currentUser, setCurrentUser] = useState(storedSession?.user || null);
+  const [authToken, setAuthToken] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isRestoringAuth, setIsRestoringAuth] = useState(
+    () => localStorage.getItem(AUTH_SESSION_KEY) === "true"
+  );
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -371,22 +368,30 @@ function App() {
     if (!headers.has("Content-Type") && options.body) headers.set("Content-Type", "application/json");
     if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
 
-    const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    let response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
     if (response.status === 401) {
-      logout();
-      throw new Error("Please sign in again.");
+      try {
+        const nextToken = await refreshAccessToken();
+        headers.set("Authorization", `Bearer ${nextToken}`);
+        response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
+      } catch {
+        clearSession();
+        throw new Error("Please sign in again.");
+      }
     }
     return response;
   }
 
   function saveSession(session) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem(AUTH_SESSION_KEY, "true");
+    localStorage.removeItem(LEGACY_SESSION_KEY);
     setAuthToken(session.accessToken);
     setCurrentUser(session.user);
   }
 
-  function logout() {
-    localStorage.removeItem(SESSION_KEY);
+  function clearSession() {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
     localStorage.removeItem(ACTIVE_VIEW_KEY);
     setAuthToken("");
     setCurrentUser(null);
@@ -398,9 +403,61 @@ function App() {
     setIsLoaded(true);
   }
 
+  async function refreshAccessToken() {
+    const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include"
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || "Session refresh failed");
+    saveSession(data);
+    return data.accessToken;
+  }
+
+  async function logout() {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: "POST",
+        credentials: "include"
+      });
+    } finally {
+      clearSession();
+    }
+  }
+
   useEffect(() => {
     localStorage.setItem(ACTIVE_VIEW_KEY, activeView);
   }, [activeView]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      if (!isRestoringAuth) {
+        localStorage.removeItem(LEGACY_SESSION_KEY);
+        return;
+      }
+
+      try {
+        setStatus("Restoring session...");
+        await refreshAccessToken();
+        if (!cancelled) setStatus("Session restored.");
+      } catch {
+        if (!cancelled) {
+          clearSession();
+          setStatus("Please sign in.");
+        }
+      } finally {
+        if (!cancelled) setIsRestoringAuth(false);
+      }
+    }
+
+    restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function submitAuth(event) {
     event.preventDefault();
@@ -417,6 +474,7 @@ function App() {
       const response = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload)
       });
       const data = await response.json();
@@ -610,7 +668,7 @@ function App() {
 
   useEffect(() => {
     if (!authToken) {
-      setIsLoaded(true);
+      if (!isRestoringAuth) setIsLoaded(true);
       return;
     }
 
@@ -650,7 +708,7 @@ function App() {
       })
       .catch(() => setStatus("Connect MongoDB and start the API to load saved weeks."))
       .finally(() => setIsLoaded(true));
-  }, [authToken]);
+  }, [authToken, isRestoringAuth]);
 
   useEffect(() => {
     if (!activeTimer) return undefined;
