@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const dayKeys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const configuredApiBase = import.meta.env.VITE_API_URL;
+const API_BASE =
+  configuredApiBase && configuredApiBase !== "auto"
+    ? configuredApiBase
+    : typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:5000`
+      : "";
 const AUTH_SESSION_KEY = "punchin-auth-session";
 const LEGACY_SESSION_KEY = "punchin-session";
 const ACTIVE_VIEW_KEY = "punchin-active-view";
@@ -328,9 +334,7 @@ function getStatusKind(message) {
 function App() {
   const [authToken, setAuthToken] = useState("");
   const [currentUser, setCurrentUser] = useState(null);
-  const [isRestoringAuth, setIsRestoringAuth] = useState(
-    () => localStorage.getItem(AUTH_SESSION_KEY) === "true"
-  );
+  const [isRestoringAuth, setIsRestoringAuth] = useState(true);
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -433,11 +437,6 @@ function App() {
     let cancelled = false;
 
     async function restoreSession() {
-      if (!isRestoringAuth) {
-        localStorage.removeItem(LEGACY_SESSION_KEY);
-        return;
-      }
-
       try {
         setStatus("Restoring session...");
         await refreshAccessToken();
