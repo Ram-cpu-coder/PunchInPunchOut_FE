@@ -169,7 +169,8 @@ select {
 
 .work-view,
 .dashboard-view,
-.records-view {
+.records-view,
+.settings-view {
   display: grid;
   gap: 18px;
 }
@@ -688,7 +689,6 @@ select {
 
 .rate-save-button {
   width: 100%;
-  margin-top: 10px;
 }
 
 .link-button {
@@ -703,6 +703,13 @@ select {
 .link-button:hover {
   transform: none;
   box-shadow: none;
+}
+
+.auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
 }
 
 .status-text {
@@ -748,7 +755,7 @@ h1 {
 
 .dashboard-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(180px, 0.55fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 0;
 }
@@ -765,7 +772,8 @@ h1 {
 }
 
 .dashboard-money-card {
-  min-height: 220px;
+  grid-column: 1 / -1;
+  min-height: 210px;
   align-content: center;
   padding: 26px;
   background:
@@ -774,7 +782,7 @@ h1 {
 }
 
 .dashboard-small-card {
-  min-height: 220px;
+  min-height: 170px;
   align-content: center;
   padding: 20px;
 }
@@ -788,7 +796,6 @@ h1 {
 .dashboard-money-card span,
 .dashboard-small-card span,
 .dashboard-rate-panel span,
-.toolbar span,
 .status-bar {
   color: #66737b;
   font-size: 0.84rem;
@@ -819,8 +826,8 @@ h1 {
 }
 
 .dashboard-rate-panel {
-  grid-template-columns: minmax(170px, 0.7fr) minmax(220px, 1fr) auto;
-  align-items: center;
+  grid-template-columns: 1fr;
+  align-items: stretch;
   padding: 16px;
 }
 
@@ -834,13 +841,25 @@ h1 {
   font-size: 1.45rem;
 }
 
+.rate-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.rate-edit-row .rate-save-button {
+  min-width: 142px;
+  height: 48px;
+}
+
 .rate-card input {
   border-color: rgba(29, 111, 104, 0.22);
 }
 
 .records-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) repeat(2, minmax(150px, 0.55fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -883,9 +902,24 @@ h1 {
 }
 
 .records-week-card {
+  grid-column: 1 / -1;
+  min-height: 132px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  align-content: center;
   background:
     linear-gradient(135deg, rgba(29, 111, 104, 0.14), rgba(255, 255, 255, 0.9)),
     #ffffff;
+}
+
+.records-week-card > div {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.records-week-card .status-button {
+  min-width: 170px;
 }
 
 .records-week-card span,
@@ -920,9 +954,9 @@ h1 {
 
 .week-navigation {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   margin: 0;
   padding: 12px;
   border: 1px solid rgba(23, 33, 43, 0.08);
@@ -944,19 +978,6 @@ h1 {
 .week-navigation span {
   color: #66737b;
   font-size: 0.88rem;
-}
-
-.toolbar {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr;
-  gap: 12px;
-  align-items: end;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid rgba(23, 33, 43, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 42px rgba(35, 49, 61, 0.08);
 }
 
 label {
@@ -1079,7 +1100,12 @@ select:focus {
 }
 
 .compact-field input {
+  height: 40px;
   text-align: center;
+}
+
+.day-row .compact-field {
+  align-self: end;
 }
 
 .note-field input {
@@ -1094,12 +1120,13 @@ select:focus {
 
 .week-jump {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: auto minmax(220px, 1fr) auto auto;
   gap: 8px;
-  min-width: 310px;
+  min-width: 0;
 }
 
-.week-jump button {
+.week-jump button,
+.week-select-inline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1107,6 +1134,25 @@ select:focus {
   background: #edf5f3;
   color: #1d6f68;
   padding: 0 12px;
+}
+
+.week-select-inline {
+  position: relative;
+  min-width: 0;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.week-select-inline .field-icon {
+  left: 10px;
+}
+
+.week-select-inline select {
+  height: 44px;
+  padding-left: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-align-last: center;
 }
 
 button {
@@ -1169,20 +1215,72 @@ button:disabled {
   color: #a1432f;
 }
 
-.sample-button {
-  background: #eef2ff;
-  color: #334b86;
+.danger-button {
+  background: #fff2ee;
+  color: #a1432f;
 }
 
 .status-button {
-  background: #17212b;
+  background: #178a53;
   color: #ffffff;
   white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(23, 138, 83, 0.22);
 }
 
 .status-button.paid {
+  background: #eef2f2;
+  color: #17212b;
+  box-shadow: none;
+}
+
+.setup-spinner {
+  width: 38px;
+  height: 38px;
+  display: inline-block;
+  margin: 10px 0 4px;
+  border: 3px solid #dbe7e4;
+  border-right-color: #1d6f68;
+  border-radius: 50%;
+  animation: button-spin 800ms linear infinite;
+}
+
+.app-state-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid #dbe7e4;
+  border-radius: 8px;
+  background: #edf7f4;
+  color: #1d6f68;
+  font-weight: 900;
+  box-shadow: 0 14px 30px rgba(35, 49, 61, 0.08);
+}
+
+.app-state-banner.slow {
+  border-color: #f5d494;
+  background: #fff7ed;
+  color: #8a5a15;
+}
+
+.app-state-banner.error {
+  border-color: #ffd8cf;
   background: #fff2ee;
   color: #a1432f;
+}
+
+.app-state-banner span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-state-banner button {
+  height: 34px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: currentColor;
+  box-shadow: none;
 }
 
 .week-browser {
@@ -1192,25 +1290,6 @@ button:disabled {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 18px 42px rgba(35, 49, 61, 0.08);
-}
-
-.accordion-trigger {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: auto;
-  padding: 0;
-  background: transparent;
-  color: #17212b;
-  text-align: left;
-  box-shadow: none;
-}
-
-.accordion-trigger:hover {
-  transform: none;
-  box-shadow: none;
 }
 
 .accordion-label {
@@ -1229,34 +1308,6 @@ button:disabled {
   letter-spacing: 0;
 }
 
-.accordion-summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px 8px 14px;
-  border: 1px solid #dbe7e4;
-  border-radius: 8px;
-  background: #f7fbfa;
-  color: #66737b;
-  white-space: nowrap;
-}
-
-.accordion-summary strong {
-  color: #a1432f;
-  font-size: 1.05rem;
-}
-
-.accordion-summary .icon {
-  width: 18px;
-  height: 18px;
-  color: #1d6f68;
-  transition: transform 160ms ease;
-}
-
-.week-browser.open .accordion-summary .icon {
-  transform: rotate(180deg);
-}
-
 .accordion-body {
   display: grid;
   gap: 14px;
@@ -1264,10 +1315,14 @@ button:disabled {
 }
 
 .panel-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(150px, 1fr);
+  align-items: center;
   gap: 16px;
+}
+
+.panel-title > div:first-child {
+  min-width: 0;
 }
 
 h2 {
@@ -1328,8 +1383,16 @@ h2 {
 }
 
 .browser-total strong {
-  color: #a1432f;
+  color: #178a53;
   font-size: 1.5rem;
+}
+
+.paid-money {
+  color: #17212b !important;
+}
+
+.unpaid-money {
+  color: #178a53 !important;
 }
 
 .week-list {
@@ -1374,13 +1437,13 @@ h2 {
 }
 
 .week-item span:last-child {
-  color: #a1432f;
+  color: #178a53;
   font-weight: 900;
   white-space: nowrap;
 }
 
 .week-item.paid span:last-child {
-  color: #1d6f68;
+  color: #17212b;
 }
 
 .days-table {
@@ -1391,11 +1454,13 @@ h2 {
   box-shadow: 0 20px 56px rgba(35, 49, 61, 0.1);
 }
 
-.export-panel {
+.settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+.settings-card {
   padding: 14px;
   border: 1px solid rgba(23, 33, 43, 0.08);
   border-radius: 8px;
@@ -1403,11 +1468,191 @@ h2 {
   box-shadow: 0 16px 38px rgba(35, 49, 61, 0.08);
 }
 
+.user-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.profile-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.profile-form label > span:first-child {
+  color: #66737b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.email-readonly-field > span:first-child {
+  color: #66737b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.profile-actions button,
+.profile-form > button {
+  height: 48px;
+}
+
+.icon-only-button {
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
+  padding: 0;
+}
+
+.icon-only-button .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.profile-form input:disabled {
+  color: #17212b;
+  opacity: 1;
+  cursor: default;
+}
+
+.user-detail-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #dbe7e4;
+  border-radius: 8px;
+  background: #f7fbfa;
+}
+
+.user-detail-row .field-icon {
+  position: static;
+  transform: none;
+}
+
+.user-detail-row div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.user-detail-row small {
+  color: #66737b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.user-detail-row strong {
+  min-width: 0;
+  color: #17212b;
+  overflow-wrap: anywhere;
+}
+
+.settings-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.settings-card-title .eyebrow {
+  margin-bottom: 2px;
+}
+
+.password-reset-form {
+  display: grid;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px solid #edf1ef;
+}
+
+.password-change-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.password-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.settings-actions button {
+  height: 48px;
+}
+
+.export-panel {
+  display: grid;
+  gap: 0;
+  padding: 16px;
+  border: 1px solid rgba(23, 33, 43, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 38px rgba(35, 49, 61, 0.08);
+}
+
+.export-header {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(420px, 1.15fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.export-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.export-title .table-hint {
+  margin-top: 2px;
+}
+
+.export-header-actions {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.68fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.export-header-actions label > span:first-child {
+  color: #66737b;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.export-header-actions button {
+  min-width: 118px;
+}
+
+.export-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
 .export-control-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(160px, 0.65fr) auto;
-  align-items: end;
-  gap: 12px;
+  grid-template-columns: 1fr;
 }
 
 .export-field {
@@ -1416,9 +1661,10 @@ h2 {
 }
 
 .export-week-list {
-  max-height: 190px;
+  max-height: 300px;
   overflow: auto;
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
   padding: 8px;
   border: 1px solid #dbe7e4;
@@ -1431,10 +1677,28 @@ h2 {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
-  padding: 10px;
+  min-height: 64px;
+  padding: 12px;
   border: 1px solid #e4eeeb;
   border-radius: 8px;
   background: #ffffff;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.export-week-option:hover {
+  border-color: rgba(29, 111, 104, 0.36);
+  box-shadow: 0 8px 18px rgba(35, 49, 61, 0.08);
+  transform: translateY(-1px);
+}
+
+.export-week-option:has(input:checked) {
+  border-color: #1d6f68;
+  background: #edf8f4;
+  box-shadow: 0 0 0 3px rgba(29, 111, 104, 0.12);
 }
 
 .export-week-option input {
@@ -1467,6 +1731,11 @@ h2 {
   padding: 14px;
   border-bottom: 1px solid #edf1ef;
   background: rgba(255, 255, 255, 0.7);
+}
+
+.table-toolbar .danger-button {
+  min-width: 146px;
+  flex: 0 0 auto;
 }
 
 .table-head,
@@ -1931,7 +2200,6 @@ output {
     flex-direction: column;
   }
 
-  .toolbar,
   .week-navigation {
     grid-template-columns: 1fr;
   }
@@ -1949,6 +2217,15 @@ output {
     grid-template-columns: 1fr;
   }
 
+  .records-week-card {
+    grid-template-columns: 1fr;
+  }
+
+  .records-week-card .status-button {
+    width: 100%;
+    min-width: 0;
+  }
+
   .dashboard-money-card,
   .dashboard-small-card,
   .records-week-card,
@@ -1960,9 +2237,68 @@ output {
     grid-template-columns: 1fr;
   }
 
+  .rate-edit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rate-edit-row .rate-save-button {
+    width: 100%;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-card-title {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .profile-form button,
+  .settings-card-title button {
+    width: 100%;
+  }
+
+  .profile-actions {
+    justify-content: flex-end;
+  }
+
+  .profile-actions .icon-only-button {
+    width: 48px;
+  }
+
+  .password-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions {
+    justify-content: flex-end;
+  }
+
+  .settings-actions .icon-only-button {
+    width: 48px;
+  }
+
+  .export-header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .export-header-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .table-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .table-toolbar .danger-button {
+    width: 100%;
   }
 
   .export-panel {
@@ -1974,17 +2310,8 @@ output {
   }
 
   .panel-title {
-    flex-direction: column;
-  }
-
-  .accordion-trigger {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
-  }
-
-  .accordion-summary {
-    justify-content: space-between;
-    width: 100%;
   }
 
   .panel-actions {
@@ -2091,7 +2418,6 @@ output {
   }
 
   .setup-actions button,
-  .workspace-header button,
   .split-actions button {
     width: 100%;
   }
@@ -2230,7 +2556,6 @@ output {
     font-size: clamp(1.9rem, 10vw, 2.8rem);
   }
 
-  .toolbar,
   .table-head,
   .table-toolbar,
   .day-row,
@@ -2242,12 +2567,19 @@ output {
     padding: 14px;
   }
 
+  .export-header-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .export-header-actions button {
+    width: 100%;
+  }
+
   .day-row {
     grid-template-columns: 1fr;
     gap: 14px;
   }
 
-  .toolbar label,
   .pretty-field,
   .pretty-field input,
   .pretty-field select,
@@ -2276,8 +2608,52 @@ output {
 
   .week-jump,
   .week-list {
-    grid-template-columns: 1fr;
     min-width: 0;
+  }
+
+  .week-jump {
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+  }
+
+  .week-jump button {
+    padding: 0 10px;
+  }
+
+  .week-jump button:first-of-type {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .week-select-inline {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .week-jump button:nth-of-type(2) {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .week-jump button:nth-of-type(3) {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .week-jump button:first-of-type,
+  .week-jump button:nth-of-type(2),
+  .week-jump button:nth-of-type(3) {
+    font-size: 0;
+  }
+
+  .week-jump button:first-of-type .icon,
+  .week-jump button:nth-of-type(2) .icon,
+  .week-jump button:nth-of-type(3) .icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .week-list {
+    grid-template-columns: 1fr;
   }
 
   .week-item {
@@ -2285,17 +2661,8 @@ output {
     flex-direction: column;
   }
 
-  .week-browser.collapsed {
-    padding-bottom: 12px;
-  }
-
   .accordion-heading {
     font-size: 1.18rem;
-  }
-
-  .accordion-summary {
-    gap: 8px;
-    padding: 9px 10px;
   }
 
   .actions,

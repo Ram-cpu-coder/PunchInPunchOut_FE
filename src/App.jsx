@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const dayKeys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -12,7 +12,7 @@ const API_BASE =
 const AUTH_SESSION_KEY = "punchin-auth-session";
 const LEGACY_SESSION_KEY = "punchin-session";
 const ACTIVE_VIEW_KEY = "punchin-active-view";
-const validViews = ["work", "dashboard", "records"];
+const validViews = ["work", "dashboard", "records", "settings"];
 
 function FieldIcon({ name }) {
   return (
@@ -47,6 +47,7 @@ function addDays(dateString, days) {
 function Icon({ name }) {
   const paths = {
     save: "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z M17 21v-8H7v8 M7 3v5h8",
+    edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5Z",
     trash: "M3 6h18 M8 6V4h8v2 M6 6l1 15h10l1-15",
     check: "M20 6 9 17l-5-5",
     undo: "M9 14 4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-1",
@@ -64,6 +65,7 @@ function Icon({ name }) {
     calendar: "M7 3v4 M17 3v4 M4 9h16 M5 5h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z",
     archive: "M4 7h16 M5 7l1 14h12l1-14 M8 3h8l2 4H6l2-4 M10 12h4",
     chart: "M4 19V5 M8 17v-6 M13 17V8 M18 17v-9 M3 19h18",
+    settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1h.1a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z",
     work: "M10 6V5a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v1 M4 7h16v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z M4 12h16",
     menu: "M4 6h16 M4 12h16 M4 18h16",
     chevronLeft: "M15 18 9 12l6-6",
@@ -324,6 +326,7 @@ function getStatusKind(message) {
     text.includes("enter ") ||
     text.includes("stop ") ||
     text.includes("connect ") ||
+    text.includes("cannot reach") ||
     text.includes("please ")
   ) {
     return "error";
@@ -336,7 +339,8 @@ function getStatusKind(message) {
     text.includes("creating") ||
     text.includes("marking") ||
     text.includes("stopping") ||
-    text.includes("starting")
+    text.includes("starting") ||
+    text.includes("slow")
   ) {
     return "loading";
   }
@@ -362,6 +366,13 @@ function App() {
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showSettingsPasswords, setShowSettingsPasswords] = useState(false);
+  const [isPasswordPanelOpen, setIsPasswordPanelOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetForm, setResetForm] = useState({ email: "", token: "", password: "", confirmPassword: "" });
   const [weeks, setWeeks] = useState([]);
   const [week, setWeek] = useState(createWeek());
   const [hourlyRate, setHourlyRate] = useState("");
@@ -371,37 +382,78 @@ function App() {
     return validViews.includes(savedView) ? savedView : "work";
   });
   const [weekView, setWeekView] = useState("unpaid");
-  const [isPaymentOpen, setIsPaymentOpen] = useState(() =>
-    typeof window === "undefined" ? true : window.innerWidth > 700
-  );
   const [timeFormat, setTimeFormat] = useState("12");
   const [activeTimer, setActiveTimer] = useState(null);
   const [now, setNow] = useState(() => new Date());
   const [status, setStatus] = useState("Ready");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSlowConnection, setIsSlowConnection] = useState(false);
+  const [connectionProblem, setConnectionProblem] = useState("");
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [isPasswordSaving, setIsPasswordSaving] = useState(false);
+  const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [dirtyDayKeys, setDirtyDayKeys] = useState([]);
   const [exportWeekStarts, setExportWeekStarts] = useState([]);
   const [exportFormat, setExportFormat] = useState("pdf");
+  const [exportDate, setExportDate] = useState("");
+  const activeRequestsRef = useRef(0);
 
   const todayIndex = (new Date().getDay() + 6) % 7;
   const activeWorkIndex =
     activeTimer?.weekStart === week.weekStart ? activeTimer.dayIndex : todayIndex;
   const currentWorkDay = week.days[activeWorkIndex] || week.days[todayIndex] || week.days[0];
 
+  async function trackedFetch(url, options = {}) {
+    activeRequestsRef.current += 1;
+    setIsSyncing(true);
+    setIsSlowConnection(false);
+    setConnectionProblem("");
+
+    const controller = new AbortController();
+    const slowTimer = window.setTimeout(() => {
+      setIsSlowConnection(true);
+      setStatus("Still working. Connection is slow...");
+    }, 3000);
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+
+    try {
+      return await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+    } catch (error) {
+      const message =
+        error.name === "AbortError"
+          ? "Connection is slow. Please check internet and try again."
+          : "Cannot reach the server. Check internet or API status.";
+      setConnectionProblem(message);
+      throw new Error(message);
+    } finally {
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(timeout);
+      activeRequestsRef.current = Math.max(activeRequestsRef.current - 1, 0);
+      if (activeRequestsRef.current === 0) {
+        setIsSyncing(false);
+        setIsSlowConnection(false);
+      }
+    }
+  }
+
   async function apiFetch(path, options = {}) {
     const headers = new Headers(options.headers || {});
     if (!headers.has("Content-Type") && options.body) headers.set("Content-Type", "application/json");
     if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
 
-    let response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
+    let response = await trackedFetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
     if (response.status === 401) {
       try {
         const nextToken = await refreshAccessToken();
         headers.set("Authorization", `Bearer ${nextToken}`);
-        response = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
+        response = await trackedFetch(`${API_BASE}${path}`, { ...options, headers, credentials: "include" });
       } catch {
         clearSession();
         throw new Error("Please sign in again.");
@@ -432,7 +484,7 @@ function App() {
   }
 
   async function refreshAccessToken() {
-    const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const response = await trackedFetch(`${API_BASE}/api/auth/refresh`, {
       method: "POST",
       credentials: "include"
     });
@@ -444,7 +496,8 @@ function App() {
 
   async function logout() {
     try {
-      await fetch(`${API_BASE}/api/auth/logout`, {
+      setStatus("Logging out...");
+      await trackedFetch(`${API_BASE}/api/auth/logout`, {
         method: "POST",
         credentials: "include"
       });
@@ -456,6 +509,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem(ACTIVE_VIEW_KEY, activeView);
   }, [activeView]);
+
+  useEffect(() => {
+    setProfileName(currentUser?.name || "");
+  }, [currentUser]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("resetToken");
+    const email = params.get("email") || "";
+
+    if (token) {
+      setAuthMode("reset");
+      setResetForm((form) => ({ ...form, token, email }));
+      setStatus("Enter a new password to finish reset.");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -494,7 +563,7 @@ function App() {
     try {
       setIsAuthSubmitting(true);
       setStatus(authMode === "signup" ? "Signing up..." : "Signing in...");
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await trackedFetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -512,6 +581,141 @@ function App() {
       setStatus(error.message);
     } finally {
       setIsAuthSubmitting(false);
+    }
+  }
+
+  async function requestPasswordReset(event) {
+    event.preventDefault();
+    if (isResetSubmitting) return;
+
+    try {
+      setIsResetSubmitting(true);
+      setStatus("Sending reset link...");
+      const response = await trackedFetch(`${API_BASE}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Could not send reset link");
+      setStatus(data.message || "Reset link sent.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  }
+
+  async function resetPassword(event) {
+    event.preventDefault();
+    if (isResetSubmitting) return;
+
+    if (resetForm.password.length < 6) {
+      setStatus("New password must be at least 6 characters.");
+      return;
+    }
+
+    if (resetForm.password !== resetForm.confirmPassword) {
+      setStatus("New passwords do not match.");
+      return;
+    }
+
+    try {
+      setIsResetSubmitting(true);
+      setStatus("Resetting password...");
+      const response = await trackedFetch(`${API_BASE}/api/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: resetForm.email,
+          token: resetForm.token,
+          password: resetForm.password
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Password reset failed");
+
+      saveSession(data);
+      window.history.replaceState({}, "", window.location.pathname);
+      setIsLoaded(false);
+      setStatus("Password reset. Logged in.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  }
+
+  async function updateProfile(event) {
+    event.preventDefault();
+    if (isProfileSaving) return;
+
+    const name = profileName.trim();
+    if (!name) {
+      setStatus("Name is required.");
+      return;
+    }
+
+    try {
+      setIsProfileSaving(true);
+      setStatus("Saving name...");
+      const response = await apiFetch("/api/auth/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Name update failed");
+
+      setCurrentUser(data.user);
+      setProfileName(data.user.name || "");
+      setIsEditingProfile(false);
+      setStatus("Name updated.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsProfileSaving(false);
+    }
+  }
+
+  async function updatePassword(event) {
+    event.preventDefault();
+    if (isPasswordSaving) return;
+
+    if (passwordForm.newPassword.length < 6) {
+      setStatus("New password must be at least 6 characters.");
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setStatus("New passwords do not match.");
+      return;
+    }
+
+    try {
+      setIsPasswordSaving(true);
+      setStatus("Updating password...");
+      const response = await apiFetch("/api/auth/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Password update failed");
+
+      saveSession(data);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setIsPasswordPanelOpen(false);
+      setStatus("Password updated.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setIsPasswordSaving(false);
     }
   }
 
@@ -542,6 +746,8 @@ function App() {
   const clockHourAngle = (clockSecondsForFace / 3600) * 30;
   const hasOtherActiveTimer = Boolean(activeTimer) && !isWorkTimerRunning;
   const isWeekEditingLocked = Boolean(activeTimer);
+  const trimmedProfileName = profileName.trim();
+  const hasProfileNameChanged = trimmedProfileName !== (currentUser?.name || "");
   const primaryShiftLabel = isSaving
     ? isWorkTimerRunning
       ? "Stopping..."
@@ -551,15 +757,16 @@ function App() {
       : currentWorkDayCompleted
         ? "Completed"
         : "Start shift";
-  const shouldShowToast = status && status !== "Ready";
-  const statusKind = shouldShowToast ? getStatusKind(status) : "success";
+  const visibleStateMessage = connectionProblem || (isSlowConnection ? "Slow connection. Still trying..." : status);
+  const shouldShowToast = Boolean(visibleStateMessage && visibleStateMessage !== "Ready");
+  const statusKind = shouldShowToast ? getStatusKind(visibleStateMessage) : "success";
 
   useEffect(() => {
     if (!shouldShowToast) return undefined;
 
     const timeout = window.setTimeout(() => setStatus("Ready"), 3000);
     return () => window.clearTimeout(timeout);
-  }, [shouldShowToast, status]);
+  }, [shouldShowToast, visibleStateMessage]);
 
   const unpaidWeeks = useMemo(() => {
     return weeks
@@ -596,16 +803,6 @@ function App() {
     return unpaidWeeks;
   }, [allWeeks, paidWeeks, unpaidWeeks, weekView]);
 
-  const unpaidSummary = useMemo(() => {
-    return unpaidWeeks.reduce(
-      (summary, savedWeek) => ({
-        hours: Number((summary.hours + savedWeek.totals.weeklyHours).toFixed(2)),
-        pay: Number((summary.pay + savedWeek.totals.weeklyPay).toFixed(2))
-      }),
-      { hours: 0, pay: 0 }
-    );
-  }, [unpaidWeeks]);
-
   const viewSummary = useMemo(() => {
     return visibleWeeks.reduce(
       (summary, savedWeek) => ({
@@ -639,6 +836,26 @@ function App() {
     setHourlyRate(data.hourlyRate ?? "");
     setHasSavedHourlyRate(data.hourlyRate !== null && data.hourlyRate !== undefined && data.hourlyRate !== "");
     return data;
+  }
+
+  async function reloadWorkspace() {
+    setStatus("Refreshing workspace...");
+    const [settings, savedWeeks] = await Promise.all([loadSettings(), loadWeeks()]);
+    const restoredTimer = settings.activeTimer?.weekStart ? settings.activeTimer : null;
+
+    if (restoredTimer) {
+      await loadWeek(restoredTimer.weekStart);
+      setActiveTimer({
+        weekStart: restoredTimer.weekStart,
+        dayIndex: restoredTimer.dayIndex,
+        startedAt: new Date(restoredTimer.startedAt).getTime(),
+        startTime: restoredTimer.startTime
+      });
+    } else {
+      await loadWeek(week.weekStart || getMonday());
+    }
+
+    setStatus(`Workspace refreshed. ${savedWeeks.length} weeks loaded.`);
   }
 
   async function saveActiveTimer(timer) {
@@ -680,7 +897,7 @@ function App() {
       setIsSaving(true);
       setStatus("Saving hourly rate...");
       await saveSettings();
-      setActiveView("work");
+      if (!hasSavedHourlyRate) setActiveView("work");
       setStatus("Hourly rate saved.");
     } catch (error) {
       setStatus(error.message);
@@ -690,7 +907,6 @@ function App() {
   }
 
   async function loadWeek(weekStart) {
-    setStatus("Loading week...");
     const response = await apiFetch(`/api/weeks/${weekStart}`);
     const data = await response.json();
     const normalized = { ...createWeek(weekStart), ...data, isPaid: Boolean(data.isPaid) };
@@ -785,7 +1001,7 @@ function App() {
     const nextWeek = {
       ...week,
       days: week.days.map((day, dayIndex) =>
-        dayIndex === index ? { ...day, start: "", end: "", breakMinutes: 0, notes: "" } : day
+        dayIndex === index ? { ...day, start: "", end: "", breakMinutes: 0 } : day
       )
     };
 
@@ -904,36 +1120,6 @@ function App() {
     setActiveTimer({ ...nextTimer, startedAt });
     setStatus(`${week.days[index].label} timer started at ${clockTime}. Week record is available.`);
     setIsSaving(false);
-  }
-
-  function fillSampleWeek() {
-    if (isWeekEditingLocked) {
-      setStatus("Stop the running shift before editing week records.");
-      return;
-    }
-
-    const sample = [
-      ["09:00", "17:00", 30, "Morning shift"],
-      ["10:00", "18:00", 30, ""],
-      ["09:30", "16:30", 30, ""],
-      ["12:00", "20:00", 30, "Late shift"],
-      ["08:00", "14:00", 0, ""],
-      ["", "", 0, ""],
-      ["", "", 0, ""]
-    ];
-
-    setWeek((current) => ({
-      ...current,
-      isPaid: false,
-      days: current.days.map((day, index) => ({
-        ...day,
-        start: sample[index][0],
-        end: sample[index][1],
-        breakMinutes: sample[index][2],
-        notes: sample[index][3]
-      }))
-    }));
-    setStatus("Sample week added. Save when ready.");
   }
 
   async function saveWeek() {
@@ -1170,6 +1356,24 @@ function App() {
     );
   }
 
+  function selectExportWeekFromDate(value) {
+    setExportDate(value);
+    if (!value) return;
+
+    const selectedWeekStart = getMonday(new Date(`${value}T00:00:00`));
+    const hasSavedWeek = allWeeks.some((savedWeek) => savedWeek.weekStart === selectedWeekStart);
+
+    if (!hasSavedWeek) {
+      setStatus(`No saved week found for ${selectedWeekStart}.`);
+      return;
+    }
+
+    setExportWeekStarts((starts) =>
+      starts.includes(selectedWeekStart) ? starts : [...starts, selectedWeekStart]
+    );
+    setStatus(`Week ${selectedWeekStart} selected for export.`);
+  }
+
   async function togglePaidStatus() {
     if (isWeekEditingLocked) {
       setStatus("Stop the running shift before changing payment status.");
@@ -1248,6 +1452,7 @@ function App() {
     const isRunning = activeTimer?.weekStart === week.weekStart && activeTimer.dayIndex === index;
     const isCompleted = Boolean(day.start && day.end && !isRunning);
     const anotherTimerRunning = Boolean(activeTimer) && !isRunning;
+    const isTodayMode = mode === "today";
     const isEditable = mode !== "today" && !isRunning && !isWeekEditingLocked;
     const disableRecordControls = mode !== "today" && isWeekEditingLocked;
     const isDirty = mode !== "today" && dirtyDayKeys.includes(day.key);
@@ -1259,15 +1464,17 @@ function App() {
           <span>{day.date}</span>
         </div>
         <div className="punch-control">
-          <button
-            className={`punch-button ${isRunning ? "running" : ""} ${isCompleted ? "completed" : ""}`}
-            type="button"
-            onClick={() => toggleDayTimer(index)}
-            disabled={anotherTimerRunning || isCompleted || isSaving || disableRecordControls}
-          >
-            <Icon name={isRunning || isCompleted ? "stop" : "play"} />
-            {isRunning ? "Stop shift" : isCompleted ? "Completed" : "Start shift"}
-          </button>
+          {isTodayMode && (
+            <button
+              className={`punch-button ${isRunning ? "running" : ""} ${isCompleted ? "completed" : ""}`}
+              type="button"
+              onClick={() => toggleDayTimer(index)}
+              disabled={anotherTimerRunning || isCompleted || isSaving || disableRecordControls}
+            >
+              <Icon name={isRunning || isCompleted ? "stop" : "play"} />
+              {isRunning ? "Stop shift" : isCompleted ? "Completed" : "Start shift"}
+            </button>
+          )}
           {isEditable ? (
             <div className="shift-edit-fields">
               <label>
@@ -1337,17 +1544,80 @@ function App() {
           )}
           <button className="clear-day-button" type="button" onClick={() => clearDay(index)} disabled={isSaving || disableRecordControls}>
             <Icon name="clear" />
-            Clear
+            Clear hours
           </button>
         </div>
       </article>
     );
   }
 
+  function renderPaymentStatusSection() {
+    return (
+      <section className="week-browser" aria-label="Saved weeks browser">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Payment status</span>
+            <h2>
+              {weekView === "paid" ? "Paid weeks" : weekView === "all" ? "All saved weeks" : "Weeks not paid"}
+            </h2>
+          </div>
+          <div className="tab-list" role="tablist" aria-label="Filter saved weeks">
+            <button className={weekView === "unpaid" ? "active" : ""} type="button" onClick={() => setWeekView("unpaid")}>
+              Unpaid
+            </button>
+            <button className={weekView === "paid" ? "active" : ""} type="button" onClick={() => setWeekView("paid")}>
+              Paid
+            </button>
+            <button className={weekView === "all" ? "active" : ""} type="button" onClick={() => setWeekView("all")}>
+              All
+            </button>
+          </div>
+          <div className="browser-total">
+            <span>{viewSummary.hours.toFixed(2)} hours</span>
+            <strong className={weekView === "paid" ? "paid-money" : "unpaid-money"}>
+              {viewSummary.pay ? money(viewSummary.pay) : "--"}
+            </strong>
+          </div>
+        </div>
+
+        <div className="accordion-body">
+          {visibleWeeks.length ? (
+            <div className="week-list">
+              {visibleWeeks.map((savedWeek) => (
+                <button
+                  className={`week-item ${savedWeek.isPaid ? "paid" : "unpaid"} ${
+                    savedWeek.weekStart === week.weekStart ? "selected" : ""
+                  }`}
+                  type="button"
+                  key={savedWeek.weekStart}
+                  onClick={() => {
+                    changeWeekStart(savedWeek.weekStart);
+                    openView("records");
+                  }}
+                >
+                  <span>
+                    <strong>{savedWeek.weekStart}</strong>
+                    <small>{savedWeek.isPaid ? "Paid" : "Not paid"} - {savedWeek.totals.weeklyHours.toFixed(2)} hours</small>
+                  </span>
+                  <span className={savedWeek.isPaid ? "paid-money" : "unpaid-money"}>
+                    {hourlyRate ? money(savedWeek.totals.weeklyPay) : "No rate"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-note">No {weekView} weeks to show.</p>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   const navigationItems = [
     { id: "work", label: "Work", icon: "work" },
     { id: "dashboard", label: "Dashboard", icon: "chart" },
-    { id: "records", label: "Week records", icon: "archive" }
+    { id: "records", label: "Week records", icon: "archive" },
+    { id: "settings", label: "Settings", icon: "settings" }
   ];
 
   if (!isLoaded) {
@@ -1356,76 +1626,175 @@ function App() {
         <section className="setup-panel">
           <p className="eyebrow">Punch in</p>
           <h1>Loading your workspace.</h1>
-          <p className="hero-copy">{status}</p>
+          <span className="setup-spinner" aria-hidden="true" />
+          <p className="hero-copy">{isSlowConnection ? "Connection is slow. Still trying to reach the server." : status}</p>
         </section>
       </main>
     );
   }
 
   if (!authToken) {
+    const isForgotMode = authMode === "forgot";
+    const isResetMode = authMode === "reset";
+
     return (
       <main className="app-shell setup-shell">
         <section className="setup-panel auth-panel">
           <p className="eyebrow">Punch in</p>
-          <h1>{authMode === "signup" ? "Create your account." : "Welcome back."}</h1>
-          <p className="hero-copy">Each user gets their own hourly rate, active timer, and timesheets.</p>
-          <form className="auth-form" onSubmit={submitAuth}>
-            {authMode === "signup" && (
+          <h1>
+            {isResetMode
+              ? "Set new password."
+              : isForgotMode
+                ? "Reset password."
+                : authMode === "signup"
+                  ? "Create your account."
+                  : "Welcome back."}
+          </h1>
+          <p className="hero-copy">
+            {isResetMode
+              ? "Use the reset link from your email to choose a new password."
+              : isForgotMode
+                ? "Enter your email and we will send a reset link if the account exists."
+                : "Each user gets their own hourly rate, active timer, and timesheets."}
+          </p>
+
+          {isForgotMode ? (
+            <form className="auth-form" onSubmit={requestPasswordReset}>
               <label className="pretty-field">
-                <FieldIcon name="user" />
+                <FieldIcon name="mail" />
                 <input
-                  type="text"
-                  placeholder="Full name"
-                  value={authForm.name}
-                  onChange={(event) => setAuthForm((form) => ({ ...form, name: event.target.value }))}
+                  type="email"
+                  placeholder="Email"
+                  value={forgotEmail}
+                  onChange={(event) => setForgotEmail(event.target.value)}
                   required
                 />
               </label>
-            )}
-            <label className="pretty-field">
-              <FieldIcon name="mail" />
-              <input
-                type="email"
-                placeholder="Email"
-                value={authForm.email}
-                onChange={(event) => setAuthForm((form) => ({ ...form, email: event.target.value }))}
-                required
-              />
-            </label>
-            <div className="pretty-field password-field">
-              <FieldIcon name="lock" />
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Password"
-                value={authForm.password}
-                onChange={(event) => setAuthForm((form) => ({ ...form, password: event.target.value }))}
-                required
-                minLength={6}
-              />
-              <button
-                className="password-toggle"
-                type="button"
-                onClick={() => setShowPassword((visible) => !visible)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                <Icon name={showPassword ? "eyeOff" : "eye"} />
+              <button className="primary-button" type="submit" disabled={isResetSubmitting}>
+                {isResetSubmitting ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="mail" />}
+                {isResetSubmitting ? "Sending..." : "Send reset link"}
               </button>
-            </div>
-            <button className="primary-button" type="submit" disabled={isAuthSubmitting}>
-              {isAuthSubmitting ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="check" />}
-              {isAuthSubmitting
-                ? authMode === "signup" ? "Signing up..." : "Signing in..."
-                : authMode === "signup" ? "Create account" : "Sign in"}
-            </button>
-          </form>
-          <button
-            className="link-button"
-            type="button"
-            disabled={isAuthSubmitting}
-            onClick={() => setAuthMode((mode) => (mode === "signup" ? "login" : "signup"))}
-          >
-            {authMode === "signup" ? "Already have an account? Sign in" : "New user? Create an account"}
-          </button>
+            </form>
+          ) : isResetMode ? (
+            <form className="auth-form" onSubmit={resetPassword}>
+              <label className="pretty-field">
+                <FieldIcon name="mail" />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={resetForm.email}
+                  onChange={(event) => setResetForm((form) => ({ ...form, email: event.target.value }))}
+                  required
+                />
+              </label>
+              <div className="pretty-field password-field">
+                <FieldIcon name="lock" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="New password"
+                  value={resetForm.password}
+                  onChange={(event) => setResetForm((form) => ({ ...form, password: event.target.value }))}
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="pretty-field password-field">
+                <FieldIcon name="lock" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Confirm new password"
+                  value={resetForm.confirmPassword}
+                  onChange={(event) => setResetForm((form) => ({ ...form, confirmPassword: event.target.value }))}
+                  required
+                  minLength={6}
+                />
+              </div>
+              <button className="ghost-button" type="button" onClick={() => setShowPassword((visible) => !visible)}>
+                <Icon name={showPassword ? "eyeOff" : "eye"} />
+                {showPassword ? "Hide passwords" : "Show passwords"}
+              </button>
+              <button className="primary-button" type="submit" disabled={isResetSubmitting}>
+                {isResetSubmitting ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="save" />}
+                {isResetSubmitting ? "Resetting..." : "Reset password"}
+              </button>
+            </form>
+          ) : (
+            <form className="auth-form" onSubmit={submitAuth}>
+              {authMode === "signup" && (
+                <label className="pretty-field">
+                  <FieldIcon name="user" />
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    value={authForm.name}
+                    onChange={(event) => setAuthForm((form) => ({ ...form, name: event.target.value }))}
+                    required
+                  />
+                </label>
+              )}
+              <label className="pretty-field">
+                <FieldIcon name="mail" />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={authForm.email}
+                  onChange={(event) => setAuthForm((form) => ({ ...form, email: event.target.value }))}
+                  required
+                />
+              </label>
+              <div className="pretty-field password-field">
+                <FieldIcon name="lock" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Password"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm((form) => ({ ...form, password: event.target.value }))}
+                  required
+                  minLength={6}
+                />
+                <button
+                  className="password-toggle"
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  <Icon name={showPassword ? "eyeOff" : "eye"} />
+                </button>
+              </div>
+              <button className="primary-button" type="submit" disabled={isAuthSubmitting}>
+                {isAuthSubmitting ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="check" />}
+                {isAuthSubmitting
+                  ? authMode === "signup" ? "Signing up..." : "Signing in..."
+                  : authMode === "signup" ? "Create account" : "Sign in"}
+              </button>
+            </form>
+          )}
+
+          <div className="auth-links">
+            {!isForgotMode && !isResetMode && (
+              <button
+                className="link-button"
+                type="button"
+                disabled={isAuthSubmitting}
+                onClick={() => {
+                  setForgotEmail(authForm.email);
+                  setAuthMode("forgot");
+                }}
+              >
+                Forgot password?
+              </button>
+            )}
+            {!isResetMode && (
+              <button
+                className="link-button"
+                type="button"
+                disabled={isAuthSubmitting || isResetSubmitting}
+                onClick={() => setAuthMode((mode) => (mode === "signup" || mode === "forgot" ? "login" : "signup"))}
+              >
+                {authMode === "signup" || isForgotMode ? "Back to sign in" : "New user? Create an account"}
+              </button>
+            )}
+          </div>
           <p className="status-text">{status}</p>
         </section>
       </main>
@@ -1512,26 +1881,62 @@ function App() {
             <Icon name={statusKind === "error" ? "clear" : statusKind === "loading" ? "clock" : "check"} />
             <div>
               <strong>{statusKind === "error" ? "Needs attention" : statusKind === "loading" ? "Working on it" : "Success"}</strong>
-              <span>{status}</span>
+              <span>{visibleStateMessage}</span>
             </div>
-            <button type="button" onClick={() => setStatus("Ready")} aria-label="Dismiss notification">
+            {connectionProblem && currentUser && (
+              <button className="toast-retry" type="button" onClick={reloadWorkspace}>
+                Retry
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setConnectionProblem("");
+                setStatus("Ready");
+              }}
+              aria-label="Dismiss notification"
+            >
               <Icon name="clear" />
             </button>
           </div>
         )}
 
-        {activeView !== "work" && (
-          <header className="workspace-header">
-            <div>
-              <p className="eyebrow">{activeView === "dashboard" ? "Dashboard" : "Records"}</p>
-              <h1>{activeView === "dashboard" ? "Your work overview." : "Week records."}</h1>
-            </div>
-          <button className="ghost-button" type="button" onClick={() => openView("records")}>
-              <Icon name="archive" />
-              Week records
-            </button>
-          </header>
+        {(isSlowConnection || connectionProblem) && (
+          <div className={`app-state-banner ${connectionProblem ? "error" : isSlowConnection ? "slow" : "syncing"}`}>
+            {isSlowConnection && !connectionProblem ? <span className="button-spinner" aria-hidden="true" /> : <Icon name={connectionProblem ? "clear" : "clock"} />}
+            <span>
+              {connectionProblem || (isSlowConnection ? "Slow connection. Still trying..." : status)}
+            </span>
+            {connectionProblem && currentUser && (
+              <button type="button" onClick={reloadWorkspace}>
+                Retry
+              </button>
+            )}
+          </div>
         )}
+
+        <header className="workspace-header">
+          <div>
+            <p className="eyebrow">
+              {activeView === "work"
+                ? "Work"
+                : activeView === "dashboard"
+                  ? "Dashboard"
+                  : activeView === "settings"
+                    ? "Settings"
+                    : "Records"}
+            </p>
+            <h1>
+              {activeView === "work"
+                ? "Today's shift."
+                : activeView === "dashboard"
+                  ? "Your work overview."
+                  : activeView === "settings"
+                    ? "Account settings."
+                    : "Week records."}
+            </h1>
+          </div>
+        </header>
 
         {activeView === "work" && (
           <section className="work-view">
@@ -1668,79 +2073,267 @@ function App() {
               </article>
             </section>
 
-            <section className="dashboard-rate-panel" aria-label="Hourly rate">
-              <div>
-                <span>Hourly rate</span>
-                <strong>{money(Number(hourlyRate || 0))}</strong>
-              </div>
-              <label className="pretty-field rate-field">
-                <FieldIcon name="dollar" />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="35.00"
-                  value={hourlyRate}
-                  onChange={(event) => setHourlyRate(event.target.value)}
-                  onWheel={(event) => event.currentTarget.blur()}
-                  aria-label="Hourly rate"
-                />
-              </label>
-              <button className="primary-button rate-save-button" type="button" onClick={saveRateAndContinue}>
-                <Icon name="save" />
-                Save rate
-              </button>
-            </section>
+            {renderPaymentStatusSection()}
 
             <section className="export-panel dashboard-export-panel" aria-label="Export weeks">
-              <div>
-                <p className="eyebrow">Export</p>
-                <h2>Export week reports</h2>
-                <span className="table-hint">Select one or more saved weeks, choose a format, then export.</span>
-              </div>
-
-              <div className="export-control-grid">
-                <div className="export-field">
-                  <span>Weeks</span>
-                  <div className="export-week-list">
-                    {allWeeks.length ? (
-                      allWeeks.map((savedWeek) => (
-                        <label className="export-week-option" key={savedWeek.weekStart}>
-                          <input
-                            type="checkbox"
-                            checked={exportWeekStarts.includes(savedWeek.weekStart)}
-                            onChange={() => toggleExportWeek(savedWeek.weekStart)}
-                          />
-                          <span>
-                            <strong>{savedWeek.weekStart}</strong>
-                            <small>{savedWeek.totals.weeklyHours.toFixed(2)} hrs - {money(savedWeek.totals.weeklyPay)}</small>
-                          </span>
-                        </label>
-                      ))
-                    ) : (
-                      <p className="empty-note">No saved weeks to export.</p>
-                    )}
-                  </div>
+              <div className="export-header">
+                <div className="export-title">
+                  <span className="accordion-label">
+                    <span className="eyebrow">Export</span>
+                    <span className="accordion-heading">Export week reports</span>
+                  </span>
+                  <span className="table-hint">
+                    Choose weeks from the list or pick any date from the calendar.
+                  </span>
                 </div>
 
-                <label>
-                  <span>Format</span>
+                <div className="export-header-actions">
+                  <label>
+                    <span>Find week</span>
+                    <span className="pretty-field">
+                      <FieldIcon name="calendar" />
+                      <input
+                        type="date"
+                        value={exportDate}
+                        onChange={(event) => selectExportWeekFromDate(event.target.value)}
+                        aria-label="Find export week by date"
+                      />
+                    </span>
+                  </label>
+
+                  <label>
+                    <span>Format</span>
+                    <span className="pretty-field">
+                      <FieldIcon name="download" />
+                      <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
+                        <option value="pdf">PDF</option>
+                        <option value="txt">Text</option>
+                        <option value="csv">Excel CSV</option>
+                        <option value="doc">Word</option>
+                      </select>
+                    </span>
+                  </label>
+
+                  <button className="primary-button" type="button" onClick={exportSelectedWeeks}>
+                    <Icon name="download" />
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              <div className="export-body">
+                <span className="table-hint">
+                  {exportWeekStarts.length ? `${exportWeekStarts.length} selected.` : "Select at least one week."}
+                </span>
+                <div className="export-control-grid">
+                  <div className="export-field">
+                    <span>Weeks</span>
+                    <div className="export-week-list">
+                      {allWeeks.length ? (
+                        allWeeks.map((savedWeek) => (
+                          <label className="export-week-option" key={savedWeek.weekStart}>
+                            <input
+                              type="checkbox"
+                              checked={exportWeekStarts.includes(savedWeek.weekStart)}
+                              onChange={() => toggleExportWeek(savedWeek.weekStart)}
+                            />
+                            <span>
+                              <strong>{savedWeek.weekStart}</strong>
+                              <small>{savedWeek.totals.weeklyHours.toFixed(2)} hrs - {money(savedWeek.totals.weeklyPay)}</small>
+                            </span>
+                          </label>
+                        ))
+                      ) : (
+                        <p className="empty-note">No saved weeks to export.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeView === "settings" && (
+          <section className="settings-view">
+            <section className="settings-grid" aria-label="Account settings">
+              <article className="settings-card user-card">
+                <span className="eyebrow">User details</span>
+                <form className="profile-form" onSubmit={updateProfile}>
+                  <label>
+                    <span>Name</span>
+                    <span className="pretty-field">
+                      <FieldIcon name="user" />
+                      <input
+                        type="text"
+                        value={profileName}
+                        onChange={(event) => setProfileName(event.target.value)}
+                        placeholder="Your name"
+                        disabled={!isEditingProfile}
+                        required
+                      />
+                    </span>
+                  </label>
+                  <div className="profile-actions">
+                    {isEditingProfile ? (
+                      <>
+                        <button
+                          className="ghost-button icon-only-button"
+                          type="button"
+                          disabled={isProfileSaving}
+                          aria-label="Cancel name edit"
+                          title="Cancel"
+                          onClick={() => {
+                            setProfileName(currentUser?.name || "");
+                            setIsEditingProfile(false);
+                          }}
+                        >
+                          <Icon name="clear" />
+                        </button>
+                        <button
+                          className="primary-button icon-only-button"
+                          type="submit"
+                          disabled={isProfileSaving || !hasProfileNameChanged}
+                          aria-label="Save name"
+                          title="Save"
+                        >
+                          {isProfileSaving ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="save" />}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="primary-button icon-only-button"
+                        type="button"
+                        onClick={() => setIsEditingProfile(true)}
+                        aria-label="Edit name"
+                        title="Edit name"
+                      >
+                        <Icon name="edit" />
+                      </button>
+                    )}
+                  </div>
+                </form>
+                <label className="email-readonly-field">
+                  <span>Email</span>
                   <span className="pretty-field">
-                    <FieldIcon name="download" />
-                    <select value={exportFormat} onChange={(event) => setExportFormat(event.target.value)}>
-                      <option value="pdf">PDF</option>
-                      <option value="txt">Text</option>
-                      <option value="csv">Excel CSV</option>
-                      <option value="doc">Word</option>
-                    </select>
+                    <FieldIcon name="mail" />
+                    <input type="email" value={currentUser?.email || "Not available"} disabled readOnly />
                   </span>
                 </label>
+                <section className={`password-reset-form ${isPasswordPanelOpen ? "open" : ""}`}>
+                  <div className="settings-card-title">
+                    <div>
+                      <span className="eyebrow">Security</span>
+                      <h2>Password</h2>
+                    </div>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      onClick={() => setIsPasswordPanelOpen((open) => !open)}
+                    >
+                      <Icon name={isPasswordPanelOpen ? "clear" : "lock"} />
+                      {isPasswordPanelOpen ? "Close" : "Change password"}
+                    </button>
+                  </div>
+                  {isPasswordPanelOpen && (
+                    <form className="password-change-panel" onSubmit={updatePassword}>
+                      <div className="password-grid">
+                        <div className="pretty-field password-field">
+                          <FieldIcon name="lock" />
+                          <input
+                            type={showSettingsPasswords ? "text" : "password"}
+                            placeholder="Current password"
+                            value={passwordForm.currentPassword}
+                            onChange={(event) => setPasswordForm((form) => ({ ...form, currentPassword: event.target.value }))}
+                            required
+                          />
+                        </div>
+                        <div className="pretty-field password-field">
+                          <FieldIcon name="lock" />
+                          <input
+                            type={showSettingsPasswords ? "text" : "password"}
+                            placeholder="New password"
+                            value={passwordForm.newPassword}
+                            onChange={(event) => setPasswordForm((form) => ({ ...form, newPassword: event.target.value }))}
+                            required
+                            minLength={6}
+                          />
+                        </div>
+                        <div className="pretty-field password-field">
+                          <FieldIcon name="lock" />
+                          <input
+                            type={showSettingsPasswords ? "text" : "password"}
+                            placeholder="Confirm new password"
+                            value={passwordForm.confirmPassword}
+                            onChange={(event) => setPasswordForm((form) => ({ ...form, confirmPassword: event.target.value }))}
+                            required
+                            minLength={6}
+                          />
+                        </div>
+                      </div>
+                      <div className="settings-actions">
+                        <button
+                          className="ghost-button icon-only-button"
+                          type="button"
+                          onClick={() => setShowSettingsPasswords((visible) => !visible)}
+                          aria-label={showSettingsPasswords ? "Hide passwords" : "Show passwords"}
+                          title={showSettingsPasswords ? "Hide passwords" : "Show passwords"}
+                        >
+                          <Icon name={showSettingsPasswords ? "eyeOff" : "eye"} />
+                        </button>
+                        <button
+                          className="ghost-button icon-only-button"
+                          type="button"
+                          disabled={isPasswordSaving}
+                          aria-label="Cancel password change"
+                          title="Cancel"
+                          onClick={() => {
+                            setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+                            setIsPasswordPanelOpen(false);
+                          }}
+                        >
+                          <Icon name="clear" />
+                        </button>
+                        <button
+                          className="primary-button icon-only-button"
+                          type="submit"
+                          disabled={isPasswordSaving}
+                          aria-label="Update password"
+                          title="Update password"
+                        >
+                          {isPasswordSaving ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="save" />}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </section>
+              </article>
 
-                <button className="primary-button" type="button" onClick={exportSelectedWeeks}>
-                  <Icon name="download" />
-                  Export
-                </button>
-              </div>
+              <section className="settings-card dashboard-rate-panel" aria-label="Hourly rate">
+                <div>
+                  <span>Hourly rate</span>
+                  <strong>{money(Number(hourlyRate || 0))}</strong>
+                </div>
+                <div className="rate-edit-row">
+                  <label className="pretty-field rate-field">
+                    <FieldIcon name="dollar" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="35.00"
+                      value={hourlyRate}
+                      onChange={(event) => setHourlyRate(event.target.value)}
+                      onWheel={(event) => event.currentTarget.blur()}
+                      aria-label="Hourly rate"
+                    />
+                  </label>
+                  <button className="primary-button rate-save-button" type="button" onClick={saveRateAndContinue} disabled={isSaving}>
+                    {isSaving ? <span className="button-spinner" aria-hidden="true" /> : <Icon name="save" />}
+                    {isSaving ? "Saving..." : "Save rate"}
+                  </button>
+                </div>
+              </section>
             </section>
           </section>
         )}
@@ -1756,9 +2349,15 @@ function App() {
 
             <section className="records-hero" aria-label="Selected week summary">
               <article className="records-week-card">
-                <span>Selected week</span>
-                <strong>{week.weekStart}</strong>
-                <small>{week.isPaid ? "Paid" : "Unpaid until marked paid"}</small>
+                <div>
+                  <span>Selected week</span>
+                  <strong>{week.weekStart}</strong>
+                  <small>{week.isPaid ? "Paid" : "Unpaid until marked paid"}</small>
+                </div>
+                <button className={week.isPaid ? "status-button paid" : "status-button"} type="button" onClick={togglePaidStatus}>
+                  <Icon name={week.isPaid ? "undo" : "check"} />
+                  {isWeekEditingLocked ? "Locked while running" : week.isPaid ? "Mark unpaid" : "Mark paid"}
+                </button>
               </article>
               <article className="records-stat-card">
                 <span>Hours</span>
@@ -1776,110 +2375,25 @@ function App() {
                   <Icon name="chevronLeft" />
                   Previous
                 </button>
-                <button type="button" onClick={() => navigateWeek("current")}>
-                  <Icon name="calendar" />
-                  Current
-                </button>
+                <label className="week-select-inline">
+                  <select value={week.weekStart} onChange={(event) => changeWeekStart(event.target.value)}>
+                    <option value={week.weekStart}>Week {week.weekStart}</option>
+                    {weeks.map((savedWeek) => (
+                      <option value={savedWeek.weekStart} key={savedWeek.weekStart}>
+                        Week {savedWeek.weekStart}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button type="button" onClick={() => navigateWeek("next")}>
                   Next
                   <Icon name="chevronRight" />
                 </button>
+                <button type="button" onClick={() => navigateWeek("current")}>
+                  <Icon name="calendar" />
+                  Current
+                </button>
               </div>
-              <button className={week.isPaid ? "status-button paid" : "status-button"} type="button" onClick={togglePaidStatus}>
-                <Icon name={week.isPaid ? "undo" : "check"} />
-                {isWeekEditingLocked ? "Locked while running" : week.isPaid ? "Mark unpaid" : "Mark paid"}
-              </button>
-            </section>
-
-            <section className="toolbar" aria-label="Week controls">
-              <label>
-                <span>Week starting</span>
-                <span className="pretty-field">
-                  <FieldIcon name="calendar" />
-                  <input type="date" value={week.weekStart} onChange={(event) => changeWeekStart(event.target.value)} />
-                </span>
-              </label>
-
-              <label>
-                <span>Saved weeks</span>
-                <span className="pretty-field">
-                  <FieldIcon name="archive" />
-                  <select value={week.weekStart} onChange={(event) => changeWeekStart(event.target.value)}>
-                    <option value={week.weekStart}>Current week</option>
-                    {weeks.map((savedWeek) => (
-                      <option value={savedWeek.weekStart} key={savedWeek.weekStart}>
-                        {savedWeek.weekStart}
-                      </option>
-                    ))}
-                  </select>
-                </span>
-              </label>
-            </section>
-
-            <section className={`week-browser ${isPaymentOpen ? "open" : "collapsed"}`} aria-label="Saved weeks browser">
-              <button
-                className="accordion-trigger"
-                type="button"
-                aria-expanded={isPaymentOpen}
-                onClick={() => setIsPaymentOpen((open) => !open)}
-              >
-                <span className="accordion-label">
-                  <span className="eyebrow">Payment status</span>
-                  <span className="accordion-heading">
-                    {weekView === "paid" ? "Paid weeks" : weekView === "all" ? "All saved weeks" : "Weeks not paid"}
-                  </span>
-                </span>
-                <span className="accordion-summary">
-                  <span>{viewSummary.hours.toFixed(2)} hours</span>
-                  <strong>{viewSummary.pay ? money(viewSummary.pay) : "--"}</strong>
-                  <Icon name="chevronDown" />
-                </span>
-              </button>
-
-              {isPaymentOpen && (
-                <div className="accordion-body">
-                  <div className="panel-actions">
-                    <div className="tab-list" role="tablist" aria-label="Filter saved weeks">
-                      <button className={weekView === "unpaid" ? "active" : ""} type="button" onClick={() => setWeekView("unpaid")}>
-                        Unpaid
-                      </button>
-                      <button className={weekView === "paid" ? "active" : ""} type="button" onClick={() => setWeekView("paid")}>
-                        Paid
-                      </button>
-                      <button className={weekView === "all" ? "active" : ""} type="button" onClick={() => setWeekView("all")}>
-                        All
-                      </button>
-                    </div>
-                    <div className="browser-total">
-                      <span>{viewSummary.hours.toFixed(2)} hours</span>
-                      <strong>{viewSummary.pay ? money(viewSummary.pay) : "--"}</strong>
-                    </div>
-                  </div>
-
-                  {visibleWeeks.length ? (
-                    <div className="week-list">
-                      {visibleWeeks.map((savedWeek) => (
-                        <button
-                          className={`week-item ${savedWeek.isPaid ? "paid" : "unpaid"} ${
-                            savedWeek.weekStart === week.weekStart ? "selected" : ""
-                          }`}
-                          type="button"
-                          key={savedWeek.weekStart}
-                          onClick={() => changeWeekStart(savedWeek.weekStart)}
-                        >
-                          <span>
-                            <strong>{savedWeek.weekStart}</strong>
-                            <small>{savedWeek.isPaid ? "Paid" : "Not paid"} - {savedWeek.totals.weeklyHours.toFixed(2)} hours</small>
-                          </span>
-                          <span>{hourlyRate ? money(savedWeek.totals.weeklyPay) : "No rate"}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="empty-note">No {weekView} weeks to show.</p>
-                  )}
-                </div>
-              )}
             </section>
 
             <section className="days-table" aria-label="Daily hour entries">
@@ -1893,20 +2407,14 @@ function App() {
                       : "Edit a day, then use the Save button that appears on that row."}
                   </span>
                 </div>
-                <div className="actions">
-                  <button className="sample-button" type="button" onClick={fillSampleWeek}>
-                    <Icon name="sparkles" />
-                    Sample week
-                  </button>
-                  <button className="ghost-button" type="button" onClick={deleteWeek}>
-                    <Icon name="trash" />
-                    Delete week
-                  </button>
-                </div>
+                <button className="ghost-button danger-button" type="button" onClick={deleteWeek}>
+                  <Icon name="trash" />
+                  Delete week
+                </button>
               </div>
               <div className="table-head">
                 <span>Day</span>
-                <span>Timer</span>
+                <span>Shift time</span>
                 <span>Break</span>
                 <span>Hours</span>
                 <span>Note</span>
@@ -1919,8 +2427,7 @@ function App() {
         )}
 
         <footer className="status-bar">
-          <span>{status}</span>
-          <span>Weeks stay saved until you delete them.</span>
+          <span>Made by Ram Kumar Dhimal with love</span>
         </footer>
       </section>
     </main>
